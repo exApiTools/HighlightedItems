@@ -9,6 +9,7 @@
     <DebugType>embedded</DebugType>
     <PathMap>$(MSBuildProjectDirectory)=$(MSBuildProjectName)</PathMap>
     <EmbedAllSources>true</EmbedAllSources>
+	<OutputPath>..\..\..\..\PoeHelper\Plugins\Compiled\HighlightedItems\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
     <None Remove="images\*.png" />
@@ -20,7 +21,7 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="ExileCore">
-      <HintPath>$(exapiPackage)\ExileCore.dll</HintPath>
+      <HintPath>..\..\..\..\PoeHelper\ExileCore.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
