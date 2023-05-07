@@ -54,20 +54,22 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         if (!Settings.Enable)
             return;
 
-        var stashPanel = InGameState.IngameUi.StashElement;
-        if (stashPanel.IsVisible)
+        var (inventory, rectElement) = (InGameState.IngameUi.StashElement, InGameState.IngameUi.GuildStashElement) switch
         {
-            var visibleStashElement = stashPanel.VisibleStash?.InventoryUIElement;
-            if (visibleStashElement == null)
-                return;
+            ({ IsVisible: true, VisibleStash: { InventoryUIElement: { } invRect } visibleStash }, _) => (visibleStash, invRect),
+            (_, { IsVisible: true, VisibleStash: { InventoryUIElement: { } invRect } visibleStash }) => (visibleStash, invRect),
+            _ => (null, null)
+        };
 
+        if (inventory != null)
+        {
             //Determine Stash Pickup Button position and draw
-            var stashRect = visibleStashElement.GetClientRect();
+            var stashRect = rectElement.GetClientRect();
             var pickButtonRect = new SharpDX.RectangleF(stashRect.BottomRight.X - 43, stashRect.BottomRight.Y + 10, 37, 37);
 
             Graphics.DrawImage("pick.png", pickButtonRect);
 
-            var highlightedItems = GetHighlightedItems();
+            var highlightedItems = GetHighlightedItems(inventory);
 
             int? stackSizes = 0;
             foreach (var item in highlightedItems)
@@ -96,7 +98,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         }
 
         var inventoryPanel = InGameState.IngameUi.InventoryPanel;
-        if (inventoryPanel.IsVisible && Settings.DumpButtonEnable)
+        if (inventoryPanel.IsVisible && Settings.DumpButtonEnable && IsStashTargetOpened)
         {
             //Determine Inventory Pickup Button position and draw
             var inventoryRect = inventoryPanel.Children[2].GetClientRect();
@@ -191,13 +193,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                     break;
                 }
 
-                if (!InGameState.IngameUi.StashElement.IsVisible
-                    && !InGameState.IngameUi.SellWindow.IsVisible
-                    && !InGameState.IngameUi.TradeWindow.IsVisible)
+                if (!IsStashTargetOpened)
                 {
                     DebugWindow.LogMsg("HighlightedItems: Target inventory closed, aborting loop");
                     break;
                 }
+
                 foreach (var _ in MoveItem(item.GetClientRect().Center))
                 {
                     yield return false;
@@ -211,6 +212,19 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             yield return false;
         }
     }
+
+    private bool IsStashTargetOpened =>
+        !Settings.VerifyTargetInventoryIsOpened
+        || InGameState.IngameUi.StashElement.IsVisible
+        || InGameState.IngameUi.SellWindow.IsVisible
+        || InGameState.IngameUi.SellWindowHideout.IsVisible
+        || InGameState.IngameUi.TradeWindow.IsVisible
+        || InGameState.IngameUi.GuildStashElement.IsVisible;
+
+    private bool IsStashSourceOpened =>
+        !Settings.VerifyTargetInventoryIsOpened
+        || InGameState.IngameUi.StashElement.IsVisible
+        || InGameState.IngameUi.GuildStashElement.IsVisible;
 
     private IEnumerable<bool> MoveItemsToInventory(IList<NormalInventoryItem> items)
     {
@@ -233,7 +247,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 yield break;
             }
 
-            if (!InGameState.IngameUi.StashElement.IsVisible)
+            if (!IsStashSourceOpened)
             {
                 DebugWindow.LogMsg("HighlightedItems: Stash Panel closed, aborting loop");
                 break;
@@ -265,11 +279,11 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     }
 
 
-    private IList<NormalInventoryItem> GetHighlightedItems()
+    private IList<NormalInventoryItem> GetHighlightedItems(Inventory stash)
     {
         try
         {
-            var stashItems = InGameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems;
+            var stashItems = stash.VisibleInventoryItems;
 
             var highlightedItems = stashItems
                 .Where(stashItem => stashItem.isHighlighted)
@@ -384,7 +398,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
     private bool IsButtonPressed(SharpDX.RectangleF buttonRect)
     {
-        if (Control.MouseButtons == MouseButtons.Left)
+        if (Control.MouseButtons == MouseButtons.Left &&
+            CanClickButtons)
         {
             if (buttonRect.Contains(Mouse.GetCursorPosition() - WindowOffset))
             {
@@ -394,6 +409,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
         return false;
     }
+
+    private bool CanClickButtons => !Settings.VerifyButtonIsNotObstructed || !ImGui.GetIO().WantCaptureMouse;
 
     private bool CheckIgnoreCells(ServerInventory.InventSlotItem inventItem)
     {

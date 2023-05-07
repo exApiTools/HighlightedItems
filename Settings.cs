@@ -3,7 +3,6 @@ using ExileCore.Shared.Attributes;
 using ExileCore.Shared.Interfaces;
 using ExileCore.Shared.Nodes;
 
-
 namespace HighlightedItems;
 
 public class Settings : ISettings
@@ -31,7 +30,6 @@ public class Settings : ISettings
     [Menu("Hotkey")]
     public HotkeyNode HotKey { get; set; } = new(Keys.F1);
 
-    [Menu("ExtraDelay")]
     public RangeNode<int> ExtraDelay { get; set; } = new(20, 0, 100);
 
     [Menu("Use Thread.Sleep", "Is a little faster, but HUD will hang while clicking")]
@@ -41,4 +39,8 @@ public class Settings : ISettings
     public RangeNode<int> IdleMouseDelay { get; set; } = new RangeNode<int>(200, 0, 1000);
 
     public ToggleNode CancelWithRightMouseButton { get; set; } = new ToggleNode(true);
+
+    public ToggleNode VerifyTargetInventoryIsOpened { get; set; } = new ToggleNode(true);
+
+    public ToggleNode VerifyButtonIsNotObstructed { get; set; } = new ToggleNode(true);
 }
