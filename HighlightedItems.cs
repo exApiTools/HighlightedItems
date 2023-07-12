@@ -13,12 +13,14 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using ExileCore.PoEMemory.Components;
+using ExileCore.Shared;
+using ExileCore.Shared.Helpers;
 
 namespace HighlightedItems;
 
 public class HighlightedItems : BaseSettingsPlugin<Settings>
 {
-    private IEnumerator<bool> _currentOperation;
+    private SyncTask<bool> _currentOperation;
 
     private bool MoveCancellationRequested => Settings.CancelWithRightMouseButton && (Control.MouseButtons & MouseButtons.Right) != 0;
     private IngameState InGameState => GameController.IngameState;
@@ -45,9 +47,10 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
     public override void Render()
     {
-        if (_currentOperation != null && _currentOperation.MoveNext())
+        if (_currentOperation != null)
         {
             DebugWindow.LogMsg("Running the inventory dump procedure...");
+            TaskUtils.RunOrRestart(ref _currentOperation, () => null);
             return;
         }
 
@@ -61,16 +64,21 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             _ => (null, null)
         };
 
+        const float buttonSize = 37;
+        var highlightedItemsFound = false;
         if (inventory != null)
         {
             //Determine Stash Pickup Button position and draw
             var stashRect = rectElement.GetClientRect();
-            var pickButtonRect = new SharpDX.RectangleF(stashRect.BottomRight.X - 43, stashRect.BottomRight.Y + 10, 37, 37);
+            var buttonPos = Settings.UseCustomMoveToInventoryButtonPosition
+                ? Settings.CustomMoveToInventoryButtonPosition
+                : stashRect.BottomRight.ToVector2Num() + new Vector2(-43, 10);
+            var buttonRect = new SharpDX.RectangleF(buttonPos.X, buttonPos.Y, buttonSize, buttonSize);
 
-            Graphics.DrawImage("pick.png", pickButtonRect);
+            Graphics.DrawImage("pick.png", buttonRect);
 
             var highlightedItems = GetHighlightedItems(inventory);
-
+            highlightedItemsFound = highlightedItems.Any();
             int? stackSizes = 0;
             foreach (var item in highlightedItems)
             {
@@ -83,17 +91,18 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                     : $"{stackSizes}"
                 : $"{highlightedItems.Count}";
 
-            var countPos = new Vector2(pickButtonRect.Left - 2, pickButtonRect.Center.Y - 11);
+            var countPos = new Vector2(buttonRect.Left - 2, buttonRect.Center.Y - 11);
             Graphics.DrawText($"{countText}", countPos with { Y = countPos.Y + 2 }, SharpDX.Color.Black, 10, "FrizQuadrataITC:22", FontAlign.Right);
             Graphics.DrawText($"{countText}", countPos with { X = countPos.X - 2 }, SharpDX.Color.White, 10, "FrizQuadrataITC:22", FontAlign.Right);
 
-            if (IsButtonPressed(pickButtonRect) || Keyboard.IsKeyPressed(Settings.HotKey.Value))
+            if (IsButtonPressed(buttonRect) ||
+                Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
             {
                 var orderedItems = highlightedItems
                     .OrderBy(stashItem => stashItem.GetClientRectCache.X)
                     .ThenBy(stashItem => stashItem.GetClientRectCache.Y)
                     .ToList();
-                _currentOperation = MoveItemsToInventory(orderedItems).GetEnumerator();
+                _currentOperation = MoveItemsToInventory(orderedItems);
             }
         }
 
@@ -101,50 +110,53 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         if (inventoryPanel.IsVisible && Settings.DumpButtonEnable && IsStashTargetOpened)
         {
             //Determine Inventory Pickup Button position and draw
-            var inventoryRect = inventoryPanel.Children[2].GetClientRect();
-            var pickButtonRect =
-                new SharpDX.RectangleF(inventoryRect.TopLeft.X + 18, inventoryRect.TopLeft.Y - 37, 37, 37);
+            var buttonPos = Settings.UseCustomMoveToStashButtonPosition
+                ? Settings.CustomMoveToStashButtonPosition
+                : inventoryPanel.Children[2].GetClientRect().TopLeft.ToVector2Num() + new Vector2(buttonSize / 2, -buttonSize);
+            var buttonRect = new SharpDX.RectangleF(buttonPos.X, buttonPos.Y, buttonSize, buttonSize);
 
-            Graphics.DrawImage("pickL.png", pickButtonRect);
-            if (IsButtonPressed(pickButtonRect))
+            Graphics.DrawImage("pickL.png", buttonRect);
+            if (IsButtonPressed(buttonRect) ||
+                Input.IsKeyDown(Settings.MoveToStashHotkey.Value) ||
+                Settings.UseMoveToInventoryAsMoveToStashWhenNoHighlights &&
+                !highlightedItemsFound &&
+                Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
             {
                 var inventoryItems = GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
                     .OrderBy(x => x.PosX)
                     .ThenBy(x => x.PosY)
                     .ToList();
 
-                _currentOperation = MoveItemsToStash(inventoryItems).GetEnumerator();
+                _currentOperation = MoveItemsToStash(inventoryItems);
             }
         }
     }
 
-    private IEnumerable<bool> MoveItemsCommonPreamble(CancellationTokenSource cts)
+    private async SyncTask<bool> MoveItemsCommonPreamble()
     {
-        while (Control.MouseButtons == MouseButtons.Left)
+        while (Control.MouseButtons == MouseButtons.Left || MoveCancellationRequested)
         {
             if (MoveCancellationRequested)
             {
-                cts.Cancel();
-                yield break;
+                return false;
             }
 
-            yield return false;
+            await TaskUtils.NextFrame();
         }
 
         if (Settings.IdleMouseDelay.Value == 0)
         {
-            yield break;
+            return true;
         }
 
         var mousePos = Mouse.GetCursorPosition();
         var sw = Stopwatch.StartNew();
-        yield return false;
+        await TaskUtils.NextFrame();
         while (true)
         {
             if (MoveCancellationRequested)
             {
-                cts.Cancel();
-                yield break;
+                return false;
             }
 
             var newPos = Mouse.GetCursorPosition();
@@ -155,26 +167,20 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             }
             else if (sw.ElapsedMilliseconds >= Settings.IdleMouseDelay.Value)
             {
-                yield break;
+                return true;
             }
             else
             {
-                yield return false;
+                await TaskUtils.NextFrame();
             }
         }
     }
 
-    private IEnumerable<bool> MoveItemsToStash(List<ServerInventory.InventSlotItem> items)
+    private async SyncTask<bool> MoveItemsToStash(List<ServerInventory.InventSlotItem> items)
     {
-        var cts = new CancellationTokenSource();
-        foreach (var _ in MoveItemsCommonPreamble(cts))
+        if (!await MoveItemsCommonPreamble())
         {
-            yield return false;
-        }
-
-        if (cts.Token.IsCancellationRequested)
-        {
-            yield break;
+            return false;
         }
 
         var prevMousePos = Mouse.GetCursorPosition();
@@ -182,7 +188,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             if (MoveCancellationRequested)
             {
-                yield break;
+                return false;
             }
 
             if (!CheckIgnoreCells(item))
@@ -199,18 +205,13 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                     break;
                 }
 
-                foreach (var _ in MoveItem(item.GetClientRect().Center))
-                {
-                    yield return false;
-                }
+                await MoveItem(item.GetClientRect().Center);
             }
         }
 
         Mouse.moveMouse(prevMousePos);
-        foreach (var _ in Wait(MouseMoveDelay, true))
-        {
-            yield return false;
-        }
+        await Wait(MouseMoveDelay, true);
+        return true;
     }
 
     private bool IsStashTargetOpened =>
@@ -226,17 +227,11 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         || InGameState.IngameUi.StashElement.IsVisible
         || InGameState.IngameUi.GuildStashElement.IsVisible;
 
-    private IEnumerable<bool> MoveItemsToInventory(IList<NormalInventoryItem> items)
+    private async SyncTask<bool> MoveItemsToInventory(IList<NormalInventoryItem> items)
     {
-        var cts = new CancellationTokenSource();
-        foreach (var _ in MoveItemsCommonPreamble(cts))
+        if (!await MoveItemsCommonPreamble())
         {
-            yield return false;
-        }
-
-        if (cts.Token.IsCancellationRequested)
-        {
-            yield break;
+            return false;
         }
 
         var prevMousePos = Mouse.GetCursorPosition();
@@ -244,7 +239,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             if (MoveCancellationRequested)
             {
-                yield break;
+                return false;
             }
 
             if (!IsStashSourceOpened)
@@ -265,17 +260,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 break;
             }
 
-            foreach (var _ in MoveItem(item.GetClientRect().Center))
-            {
-                yield return false;
-            }
+            await MoveItem(item.GetClientRect().Center);
         }
 
         Mouse.moveMouse(prevMousePos);
-        foreach (var _ in Wait(MouseMoveDelay, true))
-        {
-            yield return false;
-        }
+        await Wait(MouseMoveDelay, true);
+        return true;
     }
 
 
@@ -347,53 +337,37 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     private TimeSpan MouseDownDelay => TimeSpan.FromMilliseconds(5 + Settings.ExtraDelay.Value);
     private static readonly TimeSpan MouseUpDelay = TimeSpan.FromMilliseconds(5);
 
-    private IEnumerable<bool> MoveItem(SharpDX.Vector2 itemPosition)
+    private async SyncTask<bool> MoveItem(SharpDX.Vector2 itemPosition)
     {
         itemPosition += WindowOffset;
         Keyboard.KeyDown(Keys.LControlKey);
-        foreach (var _ in Wait(KeyDelay, true))
-        {
-            yield return false;
-        }
-
+        await Wait(KeyDelay, true);
         Mouse.moveMouse(itemPosition);
-        foreach (var _ in Wait(MouseMoveDelay, true))
-        {
-            yield return false;
-        }
-
+        await Wait(MouseMoveDelay, true);
         Mouse.LeftDown();
-        foreach (var _ in Wait(MouseDownDelay, true))
-        {
-            yield return false;
-        }
-
+        await Wait(MouseDownDelay, true);
         Mouse.LeftUp();
-        foreach (var _ in Wait(MouseUpDelay, true))
-        {
-            yield return false;
-        }
-
+        await Wait(MouseUpDelay, true);
         Keyboard.KeyUp(Keys.LControlKey);
-        foreach (var _ in Wait(KeyDelay, false))
-        {
-            yield return false;
-        }
+        await Wait(KeyDelay, false);
+        return true;
     }
 
-    private IEnumerable<bool> Wait(TimeSpan period, bool canUseThreadSleep)
+    private async SyncTask<bool> Wait(TimeSpan period, bool canUseThreadSleep)
     {
         if (canUseThreadSleep && Settings.UseThreadSleep)
         {
             Thread.Sleep(period);
-            yield break;
+            return true;
         }
 
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < period)
         {
-            yield return false;
+            await TaskUtils.NextFrame();
         }
+
+        return true;
     }
 
     private bool IsButtonPressed(SharpDX.RectangleF buttonRect)
