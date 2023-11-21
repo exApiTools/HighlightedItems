@@ -401,12 +401,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
     private void DrawIgnoredCellsSettings()
     {
-        ImGui.BeginChild("##IgnoredCellsMain", new Vector2(ImGui.GetContentRegionAvail().X, 204f), true,
+        ImGui.BeginChild("##IgnoredCellsMain", new Vector2(ImGui.GetContentRegionAvail().X, 204f), ImGuiChildFlags.Border,
             ImGuiWindowFlags.NoScrollWithMouse);
         ImGui.Text("Ignored Inventory Slots (checked = ignored)");
 
         var contentRegionAvail = ImGui.GetContentRegionAvail();
-        ImGui.BeginChild("##IgnoredCellsCels", new Vector2(contentRegionAvail.X, contentRegionAvail.Y), true,
+        ImGui.BeginChild("##IgnoredCellsCels", new Vector2(contentRegionAvail.X, contentRegionAvail.Y), ImGuiChildFlags.Border,
             ImGuiWindowFlags.NoScrollWithMouse);
 
         for (int y = 0; y < 5; ++y)
