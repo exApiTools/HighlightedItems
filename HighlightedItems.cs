@@ -1,20 +1,20 @@
-﻿using System.Windows.Forms;
-using HighlightedItems.Utils;
-using ExileCore;
+﻿using ExileCore;
+using ExileCore.PoEMemory.Components;
 using ExileCore.PoEMemory.Elements.InventoryElements;
 using ExileCore.PoEMemory.MemoryObjects;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using ExileCore.Shared;
 using ExileCore.Shared.Enums;
+using ExileCore.Shared.Helpers;
+using HighlightedItems.Utils;
 using ImGuiNET;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
-using ExileCore.PoEMemory.Components;
-using ExileCore.Shared;
-using ExileCore.Shared.Helpers;
+using System.Windows.Forms;
 
 namespace HighlightedItems;
 
@@ -182,7 +182,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             return false;
         }
-
+        Keyboard.KeyDown(Keys.LControlKey);
+        await Wait(KeyDelay, true);
         var prevMousePos = Mouse.GetCursorPosition();
         foreach (var item in items)
         {
@@ -208,7 +209,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 await MoveItem(item.GetClientRect().Center);
             }
         }
-
+        Keyboard.KeyUp(Keys.LControlKey);
+        await Wait(KeyDelay, false);
         Mouse.moveMouse(prevMousePos);
         await Wait(MouseMoveDelay, true);
         return true;
@@ -340,16 +342,13 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     private async SyncTask<bool> MoveItem(SharpDX.Vector2 itemPosition)
     {
         itemPosition += WindowOffset;
-        Keyboard.KeyDown(Keys.LControlKey);
-        await Wait(KeyDelay, true);
+
         Mouse.moveMouse(itemPosition);
         await Wait(MouseMoveDelay, true);
         Mouse.LeftDown();
         await Wait(MouseDownDelay, true);
         Mouse.LeftUp();
         await Wait(MouseUpDelay, true);
-        Keyboard.KeyUp(Keys.LControlKey);
-        await Wait(KeyDelay, false);
         return true;
     }
 
