@@ -1,20 +1,20 @@
-﻿using System.Windows.Forms;
-using HighlightedItems.Utils;
-using ExileCore;
+﻿using ExileCore;
+using ExileCore.PoEMemory.Components;
 using ExileCore.PoEMemory.Elements.InventoryElements;
 using ExileCore.PoEMemory.MemoryObjects;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using ExileCore.Shared;
 using ExileCore.Shared.Enums;
+using ExileCore.Shared.Helpers;
+using HighlightedItems.Utils;
 using ImGuiNET;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
-using ExileCore.PoEMemory.Components;
-using ExileCore.Shared;
-using ExileCore.Shared.Helpers;
+using System.Windows.Forms;
 
 namespace HighlightedItems;
 
@@ -70,8 +70,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             //Determine Stash Pickup Button position and draw
             var stashRect = rectElement.GetClientRect();
-            var buttonPos = Settings.UseCustomMoveToInventoryButtonPosition
-                ? Settings.CustomMoveToInventoryButtonPosition
+            var buttonPos = Settings.ButtonSettings.UseCustomMoveToInventoryButtonPosition
+                ? Settings.ButtonSettings.CustomMoveToInventoryButtonPosition
                 : stashRect.BottomRight.ToVector2Num() + new Vector2(-43, 10);
             var buttonRect = new SharpDX.RectangleF(buttonPos.X, buttonPos.Y, buttonSize, buttonSize);
 
@@ -85,8 +85,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 stackSizes += item.Item?.GetComponent<Stack>()?.Size;
             }
 
-            var countText = Settings.ShowStackSizes && highlightedItems.Count != stackSizes && stackSizes != null
-                ? Settings.ShowStackCountWithSize
+            var countText = Settings.ButtonSettings.ShowStackSizes.Value && highlightedItems.Count != stackSizes && stackSizes != null
+                ? Settings.ButtonSettings.ShowStackCountWithSize.Value
                     ? $"{stackSizes} / {highlightedItems.Count}"
                     : $"{stackSizes}"
                 : $"{highlightedItems.Count}";
@@ -96,7 +96,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             Graphics.DrawText($"{countText}", countPos with { X = countPos.X - 2 }, SharpDX.Color.White, 10, "FrizQuadrataITC:22", FontAlign.Right);
 
             if (IsButtonPressed(buttonRect) ||
-                Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
+                Input.IsKeyDown(Settings.HotkeySettings.MoveToInventoryHotkey.Value))
             {
                 var orderedItems = highlightedItems
                     .OrderBy(stashItem => stashItem.GetClientRectCache.X)
@@ -107,20 +107,20 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         }
 
         var inventoryPanel = InGameState.IngameUi.InventoryPanel;
-        if (inventoryPanel.IsVisible && Settings.DumpButtonEnable && IsStashTargetOpened)
+        if (inventoryPanel.IsVisible && Settings.ButtonSettings.DumpButtonEnable.Value && IsStashTargetOpened)
         {
             //Determine Inventory Pickup Button position and draw
-            var buttonPos = Settings.UseCustomMoveToStashButtonPosition
-                ? Settings.CustomMoveToStashButtonPosition
+            var buttonPos = Settings.ButtonSettings.UseCustomMoveToStashButtonPosition
+                ? Settings.ButtonSettings.CustomMoveToStashButtonPosition.Value
                 : inventoryPanel.Children[2].GetClientRect().TopLeft.ToVector2Num() + new Vector2(buttonSize / 2, -buttonSize);
             var buttonRect = new SharpDX.RectangleF(buttonPos.X, buttonPos.Y, buttonSize, buttonSize);
 
             Graphics.DrawImage("pickL.png", buttonRect);
             if (IsButtonPressed(buttonRect) ||
-                Input.IsKeyDown(Settings.MoveToStashHotkey.Value) ||
-                Settings.UseMoveToInventoryAsMoveToStashWhenNoHighlights &&
+                Input.IsKeyDown(Settings.HotkeySettings.MoveToStashHotkey.Value) ||
+                Settings.HotkeySettings.UseMoveToInventoryAsMoveToStashWhenNoHighlights &&
                 !highlightedItemsFound &&
-                Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
+                Input.IsKeyDown(Settings.HotkeySettings.MoveToInventoryHotkey.Value))
             {
                 var inventoryItems = GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
                     .OrderBy(x => x.PosX)
@@ -144,7 +144,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             await TaskUtils.NextFrame();
         }
 
-        if (Settings.IdleMouseDelay.Value == 0)
+        if (Settings.DelaySettings.IdleMouseDelay.Value == 0)
         {
             return true;
         }
@@ -165,7 +165,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 mousePos = newPos;
                 sw.Restart();
             }
-            else if (sw.ElapsedMilliseconds >= Settings.IdleMouseDelay.Value)
+            else if (sw.ElapsedMilliseconds >= Settings.DelaySettings.IdleMouseDelay.Value)
             {
                 return true;
             }
@@ -182,7 +182,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             return false;
         }
-
+        Keyboard.KeyDown(Keys.LControlKey);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.KeyDelay.Value), true);
         var prevMousePos = Mouse.GetCursorPosition();
         foreach (var item in items)
         {
@@ -208,9 +209,10 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 await MoveItem(item.GetClientRect().Center);
             }
         }
-
+        Keyboard.KeyUp(Keys.LControlKey);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.KeyDelay.Value), false);
         Mouse.moveMouse(prevMousePos);
-        await Wait(MouseMoveDelay, true);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.MouseMoveDelay.Value), true);
         return true;
     }
 
@@ -264,12 +266,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         }
 
         Mouse.moveMouse(prevMousePos);
-        await Wait(MouseMoveDelay, true);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.MouseMoveDelay.Value), true);
         return true;
     }
 
 
-    private IList<NormalInventoryItem> GetHighlightedItems(Inventory stash)
+    private static IList<NormalInventoryItem> GetHighlightedItems(Inventory stash)
     {
         try
         {
@@ -332,30 +334,22 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         return true;
     }
 
-    private static readonly TimeSpan KeyDelay = TimeSpan.FromMilliseconds(10);
-    private static readonly TimeSpan MouseMoveDelay = TimeSpan.FromMilliseconds(20);
-    private TimeSpan MouseDownDelay => TimeSpan.FromMilliseconds(5 + Settings.ExtraDelay.Value);
-    private static readonly TimeSpan MouseUpDelay = TimeSpan.FromMilliseconds(5);
-
     private async SyncTask<bool> MoveItem(SharpDX.Vector2 itemPosition)
     {
         itemPosition += WindowOffset;
-        Keyboard.KeyDown(Keys.LControlKey);
-        await Wait(KeyDelay, true);
+
         Mouse.moveMouse(itemPosition);
-        await Wait(MouseMoveDelay, true);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.MouseMoveDelay.Value), true);
         Mouse.LeftDown();
-        await Wait(MouseDownDelay, true);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.MouseDownDelay.Value), true);
         Mouse.LeftUp();
-        await Wait(MouseUpDelay, true);
-        Keyboard.KeyUp(Keys.LControlKey);
-        await Wait(KeyDelay, false);
+        await Wait(TimeSpan.FromMilliseconds(Settings.DelaySettings.MouseUpDelay.Value), true);
         return true;
     }
 
     private async SyncTask<bool> Wait(TimeSpan period, bool canUseThreadSleep)
     {
-        if (canUseThreadSleep && Settings.UseThreadSleep)
+        if (canUseThreadSleep && Settings.DelaySettings.UseThreadSleep.Value)
         {
             Thread.Sleep(period);
             return true;
@@ -384,7 +378,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         return false;
     }
 
-    private bool CanClickButtons => !Settings.VerifyButtonIsNotObstructed || !ImGui.GetIO().WantCaptureMouse;
+    private bool CanClickButtons => !Settings.ButtonSettings.VerifyButtonIsNotObstructed || !ImGui.GetIO().WantCaptureMouse;
 
     private bool CheckIgnoreCells(ServerInventory.InventSlotItem inventItem)
     {
