@@ -11,16 +11,24 @@ using ImGuiNET;
 using System;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using ExileCore.PoEMemory.Components;
 using ExileCore.Shared;
 using ExileCore.Shared.Helpers;
+using ItemFilterLibrary;
 
 namespace HighlightedItems;
 
 public class HighlightedItems : BaseSettingsPlugin<Settings>
 {
     private SyncTask<bool> _currentOperation;
+    private string _customStashFilter = "";
+    private string _customInventoryFilter = "";
+
+    private record QueryOrException(ItemQuery Query, Exception Exception);
+
+    private readonly ConditionalWeakTable<string, QueryOrException> _queries = [];
 
     private bool MoveCancellationRequested => Settings.CancelWithRightMouseButton && (Control.MouseButtons & MouseButtons.Right) != 0;
     private IngameState InGameState => GameController.IngameState;
@@ -43,6 +51,105 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     {
         base.DrawSettings();
         DrawIgnoredCellsSettings();
+    }
+
+    private Predicate<Entity> GetPredicate(string windowTitle, ref string filterText, Vector2 defaultPosition)
+    {
+        if (!Settings.ShowCustomFilterWindow) return null;
+        Settings.SavedFilters ??= [];
+        ImGui.SetNextWindowPos(defaultPosition, ImGuiCond.FirstUseEver);
+        if (ImGui.Begin(windowTitle, ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.InputTextWithHint("##input", "Filter using IFL syntax", ref filterText, 2000);
+            Predicate<Entity> returnValue = null;
+            if (!string.IsNullOrWhiteSpace(filterText))
+            {
+                if (!Settings.SavedFilters.Contains(filterText))
+                {
+                    ImGui.SameLine();
+                    if (ImGui.Button("Save"))
+                    {
+                        Settings.SavedFilters.Add(filterText);
+                    }
+                }
+
+                var (query, exception) = _queries.GetValue(filterText, s =>
+                {
+                    try
+                    {
+                        var itemQuery = ItemQuery.Load(s);
+                        if (itemQuery.FailedToCompile)
+                        {
+                            return new QueryOrException(null, new Exception(itemQuery.Error));
+                        }
+
+                        return new QueryOrException(itemQuery, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        return new QueryOrException(null, ex);
+                    }
+                })!;
+
+                if (exception != null)
+                {
+                    ImGui.TextUnformatted($"{exception.Message}");
+                }
+                else
+                {
+                    returnValue = s =>
+                    {
+                        try
+                        {
+                            return query.CompiledQuery(new ItemData(s, GameController));
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugWindow.LogError($"Failed to match item: {ex}");
+                            return false;
+                        }
+                    };
+                }
+            }
+
+            // ReSharper disable once AssignmentInConditionalExpression
+            if (Settings.SavedFilters.Any() && (Settings.OpenSavedFilterList = ImGui.TreeNodeEx("Saved filters",
+                    Settings.OpenSavedFilterList
+                        ? ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.NoTreePushOnOpen
+                        : ImGuiTreeNodeFlags.NoTreePushOnOpen)))
+            {
+                foreach (var (savedFilter, index) in Settings.SavedFilters.Select((x, i) => (x, i)).ToList())
+                {
+                    ImGui.PushID($"saved{index}");
+                    ImGui.TextUnformatted(savedFilter);
+                    ImGui.SameLine();
+                    if (ImGui.Button("Load"))
+                    {
+                        filterText = savedFilter;
+                    }
+
+                    ImGui.SameLine();
+                    if (ImGui.Button("Delete"))
+                    {
+                        if (ImGui.IsKeyDown(ImGuiKey.ModShift))
+                        {
+                            Settings.SavedFilters.Remove(savedFilter);
+                        }
+                    }
+                    else if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("Hold Shift");
+                    }
+
+                    ImGui.PopID();
+                }
+            }
+
+            ImGui.End();
+            return returnValue;
+        }
+
+        return null;
     }
 
     public override void Render()
@@ -68,8 +175,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         var highlightedItemsFound = false;
         if (inventory != null)
         {
+            var stashRect = rectElement.GetClientRectCache;
+            var (itemFilter, isCustomFilter) = GetPredicate("Custom stash filter", ref _customStashFilter, stashRect.BottomLeft.ToVector2Num()) is { } customPredicate
+                ? ((Predicate<NormalInventoryItem>)(s => customPredicate(s.Item)), true)
+                : (s => s.isHighlighted != Settings.InvertSelection.Value, false);
+
             //Determine Stash Pickup Button position and draw
-            var stashRect = rectElement.GetClientRect();
             var buttonPos = Settings.UseCustomMoveToInventoryButtonPosition
                 ? Settings.CustomMoveToInventoryButtonPosition
                 : stashRect.BottomRight.ToVector2Num() + new Vector2(-43, 10);
@@ -77,12 +188,17 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
             Graphics.DrawImage("pick.png", buttonRect);
 
-            var highlightedItems = GetHighlightedItems(inventory);
+            var highlightedItems = GetHighlightedItems(inventory, itemFilter);
             highlightedItemsFound = highlightedItems.Any();
             int? stackSizes = 0;
             foreach (var item in highlightedItems)
             {
                 stackSizes += item.Item?.GetComponent<Stack>()?.Size;
+                if (isCustomFilter)
+                {
+                    var rect = item.GetClientRectCache;
+                    Graphics.DrawFrame(rect.TopLeft.ToVector2Num(), rect.BottomRight.ToVector2Num(), Settings.CustomFilterFrameColor, Settings.CustomFilterFrameThickness);
+                }
             }
 
             var countText = Settings.ShowStackSizes && highlightedItems.Count != stackSizes && stackSizes != null
@@ -92,8 +208,8 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 : $"{highlightedItems.Count}";
 
             var countPos = new Vector2(buttonRect.Left - 2, buttonRect.Center.Y - 11);
-            Graphics.DrawText($"{countText}", countPos with { Y = countPos.Y + 2 }, SharpDX.Color.Black, 10, "FrizQuadrataITC:22", FontAlign.Right);
-            Graphics.DrawText($"{countText}", countPos with { X = countPos.X - 2 }, SharpDX.Color.White, 10, "FrizQuadrataITC:22", FontAlign.Right);
+            Graphics.DrawText($"{countText}", countPos with { Y = countPos.Y + 2 }, SharpDX.Color.Black, 10, FontAlign.Right);
+            Graphics.DrawText($"{countText}", countPos with { X = countPos.X - 2 }, SharpDX.Color.White, 10, FontAlign.Right);
 
             if (IsButtonPressed(buttonRect) ||
                 Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
@@ -105,29 +221,62 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 _currentOperation = MoveItemsToInventory(orderedItems);
             }
         }
+        else
+        {
+            if (Settings.ResetCustomFilterOnPanelClose)
+            {
+                _customStashFilter = "";
+            }
+        }
 
         var inventoryPanel = InGameState.IngameUi.InventoryPanel;
-        if (inventoryPanel.IsVisible && Settings.DumpButtonEnable && IsStashTargetOpened)
+        if (inventoryPanel.IsVisible)
         {
-            //Determine Inventory Pickup Button position and draw
-            var buttonPos = Settings.UseCustomMoveToStashButtonPosition
-                ? Settings.CustomMoveToStashButtonPosition
-                : inventoryPanel.Children[2].GetClientRect().TopLeft.ToVector2Num() + new Vector2(buttonSize / 2, -buttonSize);
-            var buttonRect = new SharpDX.RectangleF(buttonPos.X, buttonPos.Y, buttonSize, buttonSize);
+            var inventoryRect = inventoryPanel[2].GetClientRectCache;
 
-            Graphics.DrawImage("pickL.png", buttonRect);
-            if (IsButtonPressed(buttonRect) ||
-                Input.IsKeyDown(Settings.MoveToStashHotkey.Value) ||
-                Settings.UseMoveToInventoryAsMoveToStashWhenNoHighlights &&
-                !highlightedItemsFound &&
-                Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
+            var (itemFilter, isCustomFilter) = GetPredicate("Custom inventory filter", ref _customInventoryFilter, inventoryRect.BottomLeft.ToVector2Num()) is { } customPredicate
+                ? (customPredicate, true)
+                : (_ => true, false);
+
+            if (Settings.DumpButtonEnable && IsStashTargetOpened)
             {
-                var inventoryItems = GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
-                    .OrderBy(x => x.PosX)
-                    .ThenBy(x => x.PosY)
-                    .ToList();
+                //Determine Inventory Pickup Button position and draw
+                var buttonPos = Settings.UseCustomMoveToStashButtonPosition
+                    ? Settings.CustomMoveToStashButtonPosition
+                    : inventoryRect.TopLeft.ToVector2Num() + new Vector2(buttonSize / 2, -buttonSize);
+                var buttonRect = new SharpDX.RectangleF(buttonPos.X, buttonPos.Y, buttonSize, buttonSize);
 
-                _currentOperation = MoveItemsToStash(inventoryItems);
+                if (isCustomFilter)
+                {
+                    foreach (var item in GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems.Where(x => itemFilter(x.Item)))
+                    {
+                        var rect = item.GetClientRect();
+                        Graphics.DrawFrame(rect.TopLeft.ToVector2Num(), rect.BottomRight.ToVector2Num(), Settings.CustomFilterFrameColor, Settings.CustomFilterFrameThickness);
+                    }
+                }
+
+                Graphics.DrawImage("pickL.png", buttonRect);
+                if (IsButtonPressed(buttonRect) ||
+                    Input.IsKeyDown(Settings.MoveToStashHotkey.Value) ||
+                    Settings.UseMoveToInventoryAsMoveToStashWhenNoHighlights &&
+                    !highlightedItemsFound &&
+                    Input.IsKeyDown(Settings.MoveToInventoryHotkey.Value))
+                {
+                    var inventoryItems = GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
+                        .Where(x => itemFilter(x.Item))
+                        .OrderBy(x => x.PosX)
+                        .ThenBy(x => x.PosY)
+                        .ToList();
+
+                    _currentOperation = MoveItemsToStash(inventoryItems);
+                }
+            }
+        }
+        else
+        {
+            if (Settings.ResetCustomFilterOnPanelClose)
+            {
+                _customInventoryFilter = "";
             }
         }
     }
@@ -269,14 +418,14 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     }
 
 
-    private List<NormalInventoryItem> GetHighlightedItems(Inventory stash)
+    private List<NormalInventoryItem> GetHighlightedItems(Inventory stash, Predicate<NormalInventoryItem> filter)
     {
         try
         {
             var stashItems = stash.VisibleInventoryItems;
 
             var highlightedItems = stashItems
-                .Where(stashItem => stashItem.isHighlighted != Settings.InvertSelection.Value)
+                .Where(stashItem => filter(stashItem))
                 .ToList();
 
             return highlightedItems;

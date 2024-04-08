@@ -1,8 +1,10 @@
-﻿using System.Numerics;
+﻿using System.Collections.Generic;
 using System.Windows.Forms;
 using ExileCore.Shared.Attributes;
 using ExileCore.Shared.Interfaces;
 using ExileCore.Shared.Nodes;
+using SharpDX;
+using Vector2 = System.Numerics.Vector2;
 
 namespace HighlightedItems;
 
@@ -31,6 +33,10 @@ public class Settings : ISettings
     public ToggleNode UseMoveToInventoryAsMoveToStashWhenNoHighlights { get; set; } = new(false);
     public HotkeyNode MoveToStashHotkey { get; set; } = new(Keys.None);
     public ToggleNode InvertSelection { get; set; } = new(false);
+    public ToggleNode ShowCustomFilterWindow { get; set; } = new(true);
+    public ToggleNode ResetCustomFilterOnPanelClose { get; set; } = new(true);
+    public RangeNode<int> CustomFilterFrameThickness { get; set; } = new(2, 1, 20);
+    public ColorNode CustomFilterFrameColor { get; set; } = new(Color.Violet);
 
     public RangeNode<int> ExtraDelay { get; set; } = new(20, 0, 100);
 
@@ -55,4 +61,10 @@ public class Settings : ISettings
 
     [ConditionalDisplay(nameof(UseCustomMoveToInventoryButtonPosition))]
     public RangeNode<Vector2> CustomMoveToInventoryButtonPosition { get; set; } = new(Vector2.Zero, Vector2.Zero, Vector2.One * 6000);
+
+    [IgnoreMenu]
+    public List<string> SavedFilters { get; set; } = [];
+
+    [IgnoreMenu]
+    public bool OpenSavedFilterList { get; set; } = true;
 }
