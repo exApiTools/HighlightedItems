@@ -269,21 +269,21 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     }
 
 
-    private IList<NormalInventoryItem> GetHighlightedItems(Inventory stash)
+    private List<NormalInventoryItem> GetHighlightedItems(Inventory stash)
     {
         try
         {
             var stashItems = stash.VisibleInventoryItems;
 
             var highlightedItems = stashItems
-                .Where(stashItem => stashItem.isHighlighted)
+                .Where(stashItem => stashItem.isHighlighted != Settings.InvertSelection.Value)
                 .ToList();
 
-            return highlightedItems.ToList();
+            return highlightedItems;
         }
         catch
         {
-            return new List<NormalInventoryItem>();
+            return [];
         }
     }
 

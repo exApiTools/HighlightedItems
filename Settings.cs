@@ -30,6 +30,7 @@ public class Settings : ISettings
     public HotkeyNode MoveToInventoryHotkey { get; set; } = new(Keys.F1);
     public ToggleNode UseMoveToInventoryAsMoveToStashWhenNoHighlights { get; set; } = new(false);
     public HotkeyNode MoveToStashHotkey { get; set; } = new(Keys.None);
+    public ToggleNode InvertSelection { get; set; } = new(false);
 
     public RangeNode<int> ExtraDelay { get; set; } = new(20, 0, 100);
 
