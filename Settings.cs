@@ -10,14 +10,7 @@ namespace HighlightedItems;
 
 public class Settings : ISettings
 {
-    public bool[,] IgnoredCells { get; set; } = new bool[5, 12]
-    {
-        { false, false, false, false, false, false, false, false, false, false, false, false },
-        { false, false, false, false, false, false, false, false, false, false, false, false },
-        { false, false, false, false, false, false, false, false, false, false, false, false },
-        { false, false, false, false, false, false, false, false, false, false, false, false },
-        { false, false, false, false, false, false, false, false, false, false, false, false }
-    };
+    public bool[,] IgnoredCells { get; set; } = new bool[5, 12];
 
     public ToggleNode Enable { get; set; } = new(true);
 
@@ -35,6 +28,7 @@ public class Settings : ISettings
     public ToggleNode InvertSelection { get; set; } = new(false);
     public ToggleNode ShowCustomFilterWindow { get; set; } = new(true);
     public ToggleNode ResetCustomFilterOnPanelClose { get; set; } = new(true);
+    public ToggleNode UsePopupForFilterSelector { get; set; } = new(false);
     public RangeNode<int> CustomFilterFrameThickness { get; set; } = new(2, 1, 20);
     public ColorNode CustomFilterFrameColor { get; set; } = new(Color.Violet);
 

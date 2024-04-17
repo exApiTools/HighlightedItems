@@ -64,6 +64,13 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             Predicate<Entity> returnValue = null;
             if (!string.IsNullOrWhiteSpace(filterText))
             {
+                ImGui.SameLine();
+                if (ImGui.Button("Clear"))
+                {
+                    filterText = "";
+                    return null;
+                }
+
                 if (!Settings.SavedFilters.Contains(filterText))
                 {
                     ImGui.SameLine();
@@ -113,16 +120,16 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             }
 
             // ReSharper disable once AssignmentInConditionalExpression
-            if (Settings.SavedFilters.Any() && (Settings.OpenSavedFilterList = ImGui.TreeNodeEx("Saved filters",
-                    Settings.OpenSavedFilterList
-                        ? ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.NoTreePushOnOpen
-                        : ImGuiTreeNodeFlags.NoTreePushOnOpen)))
+            if (Settings.SavedFilters.Any() && Settings.UsePopupForFilterSelector
+                    ? Settings.OpenSavedFilterList = ImGui.BeginPopupContextItem("saved_filter_popup")
+                    : Settings.OpenSavedFilterList = ImGui.TreeNodeEx("Saved filters",
+                        Settings.OpenSavedFilterList
+                            ? ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.NoTreePushOnOpen
+                            : ImGuiTreeNodeFlags.NoTreePushOnOpen))
             {
                 foreach (var (savedFilter, index) in Settings.SavedFilters.Select((x, i) => (x, i)).ToList())
                 {
                     ImGui.PushID($"saved{index}");
-                    ImGui.TextUnformatted(savedFilter);
-                    ImGui.SameLine();
                     if (ImGui.Button("Load"))
                     {
                         filterText = savedFilter;
@@ -141,7 +148,27 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                         ImGui.SetTooltip("Hold Shift");
                     }
 
+                    ImGui.SameLine();
+                    ImGui.TextUnformatted(savedFilter);
+
                     ImGui.PopID();
+                }
+
+                if (Settings.UsePopupForFilterSelector)
+                {
+                    ImGui.EndPopup();
+                }
+                else
+                {
+                    ImGui.TreePop();
+                }
+            }
+
+            if (Settings.UsePopupForFilterSelector)
+            {
+                if (ImGui.Button("Open Saved Filters"))
+                {
+                    ImGui.OpenPopup("saved_filter_popup");
                 }
             }
 
