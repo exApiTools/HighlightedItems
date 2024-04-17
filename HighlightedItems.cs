@@ -158,6 +158,10 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 {
                     ImGui.EndPopup();
                 }
+                else
+                {
+                    ImGui.TreePop();
+                }
             }
 
             if (Settings.UsePopupForFilterSelector)
