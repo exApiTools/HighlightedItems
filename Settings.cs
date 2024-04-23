@@ -31,6 +31,8 @@ public class Settings : ISettings
     public ToggleNode UsePopupForFilterSelector { get; set; } = new(false);
     public RangeNode<int> CustomFilterFrameThickness { get; set; } = new(2, 1, 20);
     public ColorNode CustomFilterFrameColor { get; set; } = new(Color.Violet);
+    public RangeNode<float> CustomFilterBorderRounding { get; set; } = new(0, 0, 25);
+    public RangeNode<int> CustomFilterBorderDeflation { get; set; } = new(8, 0, 100);
 
     public RangeNode<int> ExtraDelay { get; set; } = new(20, 0, 100);
 
