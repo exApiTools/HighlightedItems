@@ -10,6 +10,7 @@ namespace HighlightedItems;
 
 public class Settings : ISettings
 {
+    [IgnoreMenu]
     public bool[,] IgnoredCells { get; set; } = new bool[5, 12];
 
     public ToggleNode Enable { get; set; } = new(true);
