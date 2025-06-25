@@ -294,7 +294,14 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                     foreach (var item in GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems.Where(x => itemFilter(x.Item)))
                     {
                         var rect = item.GetClientRect();
-                        Graphics.DrawFrame(rect.TopLeft.ToVector2Num(), rect.BottomRight.ToVector2Num(), Settings.CustomFilterFrameColor, Settings.CustomFilterFrameThickness);
+                        var deflateFactor = Settings.CustomFilterBorderDeflation / 200.0;
+                        var deflateWidth = (int)(rect.Width * deflateFactor + Settings.CustomFilterFrameThickness / 2);
+                        var deflateHeight = (int)(rect.Height * deflateFactor + Settings.CustomFilterFrameThickness / 2);
+                        rect.Inflate(-deflateWidth, -deflateHeight);
+
+                        var topLeft = rect.TopLeft.ToVector2Num();
+                        var bottomRight = rect.BottomRight.ToVector2Num();
+                        Graphics.DrawFrame(topLeft, bottomRight, Settings.CustomFilterFrameColor, Settings.CustomFilterBorderRounding, Settings.CustomFilterFrameThickness, 0);
                     }
                 }
 
