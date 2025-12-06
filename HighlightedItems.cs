@@ -418,7 +418,6 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         !Settings.VerifyTargetInventoryIsOpened
         || InGameState.IngameUi.StashElement.IsVisible
         || InGameState.IngameUi.SellWindow.IsVisible
-        || InGameState.IngameUi.SellWindowHideout.IsVisible
         || InGameState.IngameUi.TradeWindow.IsVisible
         || InGameState.IngameUi.GuildStashElement.IsVisible;
 
