@@ -383,14 +383,16 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             return false;
         }
 
-        var prevMousePos = Mouse.GetCursorPosition();
+        _prevMousePos = Mouse.GetCursorPosition();
+        Keyboard.KeyDown(Keys.LControlKey);
+        await Wait(KeyDelay, true);
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
             _itemsToMove = items[i..].Select(x => x.GetClientRect()).ToList();
-            if (MoveCancellationRequested)
+            if (MoveCancellationRequested) 
             {
-                _itemsToMove = null;
+                await StopMovingItems();
                 return false;
             }
 
@@ -409,8 +411,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             await MoveItem(item.GetClientRect().Center);
         }
 
-        Mouse.moveMouse(prevMousePos);
-        _itemsToMove = null;
+        await StopMovingItems();
         return true;
     }
 
@@ -427,6 +428,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         || InGameState.IngameUi.GuildStashElement.IsVisible;
 
     private List<RectangleF> _itemsToMove = null;
+    private Point _prevMousePos = Point.Zero;
 
     private async SyncTask<bool> MoveItemsToInventory(List<NormalInventoryItem> items)
     {
@@ -435,14 +437,16 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             return false;
         }
 
-        var prevMousePos = Mouse.GetCursorPosition();
+        _prevMousePos = Mouse.GetCursorPosition();
+        Keyboard.KeyDown(Keys.LControlKey);
+        await Wait(KeyDelay, true);
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
             _itemsToMove = items[i..].Select(x => x.GetClientRectCache).ToList();
             if (MoveCancellationRequested)
             {
-                _itemsToMove = null;
+                await StopMovingItems();
                 return false;
             }
 
@@ -467,8 +471,17 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             await MoveItem(item.GetClientRect().Center);
         }
 
-        Mouse.moveMouse(prevMousePos);
+        await StopMovingItems();
+        return true;
+    }
+
+    private async SyncTask<bool> StopMovingItems() {
+        Keyboard.KeyUp(Keys.LControlKey);
+        await Wait(KeyDelay, false);
+        Mouse.moveMouse(_prevMousePos);
+        _prevMousePos = Point.Zero;
         _itemsToMove = null;
+        DebugWindow.LogMsg("HighlightedItems: Stopped moving items");
         return true;
     }
 
@@ -543,16 +556,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     private async SyncTask<bool> MoveItem(SharpDX.Vector2 itemPosition)
     {
         itemPosition += WindowOffset;
-        Keyboard.KeyDown(Keys.LControlKey);
-        await Wait(KeyDelay, true);
         Mouse.moveMouse(itemPosition);
         await Wait(MouseMoveDelay, true);
         Mouse.LeftDown();
         await Wait(MouseDownDelay, true);
         Mouse.LeftUp();
         await Wait(MouseUpDelay, true);
-        Keyboard.KeyUp(Keys.LControlKey);
-        await Wait(KeyDelay, false);
         return true;
     }
 
