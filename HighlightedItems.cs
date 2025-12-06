@@ -550,7 +550,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
     private static readonly TimeSpan KeyDelay = TimeSpan.FromMilliseconds(10);
     private static readonly TimeSpan MouseMoveDelay = TimeSpan.FromMilliseconds(20);
-    private TimeSpan MouseDownDelay => TimeSpan.FromMilliseconds(5 + Settings.ExtraDelay.Value);
+    private TimeSpan MouseDownDelay => TimeSpan.FromMilliseconds(25 + Settings.ExtraDelay.Value);
     private static readonly TimeSpan MouseUpDelay = TimeSpan.FromMilliseconds(5);
 
     private async SyncTask<bool> MoveItem(SharpDX.Vector2 itemPosition)
