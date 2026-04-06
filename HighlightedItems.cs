@@ -1,4 +1,4 @@
-﻿using System.Windows.Forms;
+using System.Windows.Forms;
 using HighlightedItems.Utils;
 using ExileCore;
 using ExileCore.PoEMemory.Elements.InventoryElements;
@@ -12,6 +12,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using ExileCore.PoEMemory.Components;
 using ExileCore.Shared;
@@ -24,6 +25,12 @@ namespace HighlightedItems;
 
 public class HighlightedItems : BaseSettingsPlugin<Settings>
 {
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, IntPtr dwExtraInfo);
+
+    private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+
     private SyncTask<bool> _currentOperation;
     private string _customStashFilter = "";
     private string _customInventoryFilter = "";
@@ -384,12 +391,17 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         }
 
         _prevMousePos = Mouse.GetCursorPosition();
-        Keyboard.KeyDown(Keys.LControlKey);
         await Wait(KeyDelay, true);
+        
+        var processedIndices = new HashSet<int>();
+        
         for (var i = 0; i < items.Count; i++)
         {
+            if (processedIndices.Contains(i))
+                continue;
+                
             var item = items[i];
-            _itemsToMove = items[i..].Select(x => x.GetClientRect()).ToList();
+            
             if (MoveCancellationRequested) 
             {
                 await StopMovingItems();
@@ -408,7 +420,27 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 break;
             }
 
-            await MoveItem(item.GetClientRect().Center);
+            // Find all duplicate items in the same stack
+            var itemPath = item.Item?.Path ?? "";
+            var duplicateIndices = new List<int> { i };
+            for (var j = i + 1; j < items.Count; j++)
+            {
+                if (items[j].Item?.Path == itemPath)
+                {
+                    duplicateIndices.Add(j);
+                }
+            }
+
+            // Mark all duplicates as processed
+            foreach (var idx in duplicateIndices)
+            {
+                processedIndices.Add(idx);
+            }
+
+            _itemsToMove = items.Where((_, idx) => !processedIndices.Contains(idx)).Select(x => x.GetClientRect()).ToList();
+
+            // Use Ctrl+Right-Click for fast duplicate moving
+            await MoveItemControlRightClick(item.GetClientRect().Center);
         }
 
         await StopMovingItems();
@@ -438,12 +470,17 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         }
 
         _prevMousePos = Mouse.GetCursorPosition();
-        Keyboard.KeyDown(Keys.LControlKey);
         await Wait(KeyDelay, true);
+        
+        var processedIndices = new HashSet<int>();
+        
         for (var i = 0; i < items.Count; i++)
         {
+            if (processedIndices.Contains(i))
+                continue;
+                
             var item = items[i];
-            _itemsToMove = items[i..].Select(x => x.GetClientRectCache).ToList();
+            
             if (MoveCancellationRequested)
             {
                 await StopMovingItems();
@@ -468,7 +505,27 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 break;
             }
 
-            await MoveItem(item.GetClientRect().Center);
+            // Find all duplicate items in the same stack
+            var itemPath = item.Item?.Path ?? "";
+            var duplicateIndices = new List<int> { i };
+            for (var j = i + 1; j < items.Count; j++)
+            {
+                if (items[j].Item?.Path == itemPath)
+                {
+                    duplicateIndices.Add(j);
+                }
+            }
+
+            // Mark all duplicates as processed
+            foreach (var idx in duplicateIndices)
+            {
+                processedIndices.Add(idx);
+            }
+
+            _itemsToMove = items.Where((_, idx) => !processedIndices.Contains(idx)).Select(x => x.GetClientRectCache).ToList();
+
+            // Use Ctrl+Right-Click for fast duplicate moving
+            await MoveItemControlRightClick(item.GetClientRectCache.Center);
         }
 
         await StopMovingItems();
@@ -476,7 +533,6 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     }
 
     private async SyncTask<bool> StopMovingItems() {
-        Keyboard.KeyUp(Keys.LControlKey);
         await Wait(KeyDelay, false);
         Mouse.moveMouse(_prevMousePos);
         _prevMousePos = Point.Zero;
@@ -562,6 +618,34 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         await Wait(MouseDownDelay, true);
         Mouse.LeftUp();
         await Wait(MouseUpDelay, true);
+        return true;
+    }
+
+    private async SyncTask<bool> MoveItemControlRightClick(SharpDX.Vector2 itemPosition)
+    {
+        itemPosition += WindowOffset;
+        Mouse.moveMouse(itemPosition);
+        await Wait(MouseMoveDelay, true);
+        
+        // Hold Ctrl and perform right-click
+        Keyboard.KeyDown(Keys.LControlKey);
+        await Wait(KeyDelay, true);
+        
+        // Right-click using P/Invoke
+        uint x = (uint)itemPosition.X;
+        uint y = (uint)itemPosition.Y;
+        
+        // Right mouse button down
+        mouse_event(MOUSEEVENTF_RIGHTDOWN, x, y, 0, IntPtr.Zero);
+        await Wait(MouseDownDelay, true);
+        
+        // Right mouse button up
+        mouse_event(MOUSEEVENTF_RIGHTUP, x, y, 0, IntPtr.Zero);
+        await Wait(MouseUpDelay, true);
+        
+        Keyboard.KeyUp(Keys.LControlKey);
+        await Wait(KeyDelay, true);
+        
         return true;
     }
 
