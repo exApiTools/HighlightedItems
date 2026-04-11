@@ -1,5 +1,5 @@
-# HighlightedItems
+# HighlighteditemsV2
 
-Please remove folder PoEHelper\Plugins\Compiled\HighlightedItems if you use it before
+Please remove folders PoEHelper\Plugins\Source\HighlightedItems and PoEHelper\Plugins\Temp\HighlightedItems
 
 Copy plugin to PoEHelper\Plugins\Source\HighlightedItems
