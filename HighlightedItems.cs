@@ -200,11 +200,17 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         if (!Settings.Enable)
             return;
 
-        var (inventory, rectElement) = (InGameState.IngameUi.StashElement, InGameState.IngameUi.GuildStashElement) switch
+        var (inventory, rectElement, hasIngameFilter) = (
+                InGameState.IngameUi.StashElement, 
+                InGameState.IngameUi.GuildStashElement, 
+                InGameState.IngameUi.VoyageCapsuleWindow, 
+                InGameState.IngameUi.VoyageRewardWindow) switch
         {
-            ({ IsVisible: true, VisibleStash: { InventoryUIElement: { } invRect } visibleStash }, _) => (visibleStash, invRect),
-            (_, { IsVisible: true, VisibleStash: { InventoryUIElement: { } invRect } visibleStash }) => (visibleStash, invRect),
-            _ => (null, null)
+            { StashElement: { IsVisible: true, VisibleStash: { InventoryUIElement: { } invRect } visibleStash } } => (visibleStash, invRect, true),
+            { GuildStashElement: { IsVisible: true, VisibleStash: { InventoryUIElement: { } invRect } visibleStash } } => (visibleStash, invRect, true),
+            { VoyageCapsuleWindow: { IsVisible: true, Inventory: { } inv } } => (inv, inv, false),
+            { VoyageRewardWindow: { IsVisible: true, ItemContainer: { VisibleStash: { } stash } } } => (stash, stash, false),
+            _ => (null, null, false)
         };
 
         const float buttonSize = 37;
@@ -214,7 +220,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             var stashRect = rectElement.GetClientRectCache;
             var (itemFilter, isCustomFilter) = GetPredicate("Custom stash filter", ref _customStashFilter, stashRect.BottomLeft.ToVector2Num()) is { } customPredicate
                 ? ((Predicate<NormalInventoryItem>)(s => customPredicate(s.Item)), true)
-                : (s => s.isHighlighted != Settings.InvertSelection.Value, false);
+                : (s => !hasIngameFilter || s.isHighlighted != Settings.InvertSelection.Value, false);
 
             //Determine Stash Pickup Button position and draw
             var buttonPos = Settings.UseCustomMoveToInventoryButtonPosition
@@ -420,12 +426,16 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         || InGameState.IngameUi.StashElement.IsVisible
         || InGameState.IngameUi.SellWindow.IsVisible
         || InGameState.IngameUi.TradeWindow.IsVisible
-        || InGameState.IngameUi.GuildStashElement.IsVisible;
+        || InGameState.IngameUi.GuildStashElement.IsVisible
+        || InGameState.IngameUi.VoyageCapsuleWindow.IsVisible
+        ;
 
     private bool IsStashSourceOpened =>
         !Settings.VerifyTargetInventoryIsOpened
         || InGameState.IngameUi.StashElement.IsVisible
-        || InGameState.IngameUi.GuildStashElement.IsVisible;
+        || InGameState.IngameUi.GuildStashElement.IsVisible
+        || InGameState.IngameUi.VoyageRewardWindow.IsVisible
+        ;
 
     private List<RectangleF> _itemsToMove = null;
     private Point _prevMousePos = Point.Zero;
