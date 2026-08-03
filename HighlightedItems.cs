@@ -111,9 +111,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             return null;
         MigrateLegacySavedFilters();
         ImGui.TextUnformatted("Active IFL");
-        var multiline = filterText.Contains('\n');
-        ImGui.InputTextMultiline("##input", ref filterText, 8000, new Vector2(-1, multiline ? 150 : ImGui.GetTextLineHeightWithSpacing() + 2));
-        Predicate<Entity> returnValue = null;
+        ImGui.SameLine();
         if (ImGui.Button("Clear"))
             filterText = "";
         ImGui.SameLine();
@@ -127,6 +125,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             ImGui.OpenPopup("hi_save_active_filter");
         }
         ImGui.EndDisabled();
+
+        var multiline = filterText.Contains('\n');
+        var textSize = ImGui.CalcTextSize(filterText);
+        ImGui.InputTextMultiline("##input", ref filterText, 8000, new Vector2(Math.Clamp(textSize.X, 180, 600), multiline ? 150 : ImGui.GetTextLineHeightWithSpacing() + 2));
+        Predicate<Entity> returnValue = null;
+        
         if (ImGui.BeginPopup("hi_save_active_filter"))
         {
             ImGui.TextUnformatted("Name");
@@ -208,10 +212,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 ImGui.TextUnformatted("No saved filters yet.");
             else
             {
-                var savedH = Math.Max(120f, ImGui.GetContentRegionAvail().Y);
-                //ImGui.BeginChild("##saved_scroll", new Vector2(0, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.HorizontalScrollbar);
                 DrawSavedFilterRows(ref filterText);
-                //ImGui.EndChild();
             }
             ImGui.TreePop();
         }
