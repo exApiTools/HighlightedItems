@@ -1,4 +1,4 @@
-﻿using System.Windows.Forms;
+using System.Windows.Forms;
 using HighlightedItems.Utils;
 using ExileCore;
 using ExileCore.PoEMemory.Elements.InventoryElements;
@@ -27,6 +27,16 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     private SyncTask<bool> _currentOperation;
     private string _customStashFilter = "";
     private string _customInventoryFilter = "";
+    private int? _editFilterIndex;
+    private string _editQuery = "";
+    private string _editName = "";
+    private string _editFolder = "";
+    private string _saveAsQuerySnapshot = "";
+    private string _saveAsName = "";
+    private string _saveAsFolder = "";
+    private string _folderDeleteKey;
+    private string _folderDeleteLabel;
+    private bool _openFolderDeleteConfirm;
 
     private record QueryOrException(ItemQuery Query, Exception Exception);
 
@@ -38,6 +48,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
     public override bool Initialise()
     {
+        MigrateLegacySavedFilters();
         Graphics.InitImage(Path.Combine(DirectoryFullName, "images\\pick.png").Replace('\\', '/'), false);
         Graphics.InitImage(Path.Combine(DirectoryFullName, "images\\pickL.png").Replace('\\', '/'), false);
 
@@ -55,130 +66,303 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         DrawIgnoredCellsSettings();
     }
 
+    private void MigrateLegacySavedFilters()
+    {
+        Settings.SavedFilters ??= [];
+        Settings.SavedFilterEntries ??= [];
+        if (Settings.SavedFilters.Count == 0)
+            return;
+        foreach (var q in Settings.SavedFilters)
+        {
+            if (string.IsNullOrEmpty(q))
+                continue;
+            if (Settings.SavedFilterEntries.Any(e => e.Query == q))
+                continue;
+            var name = q.Length > 48 ? q.Substring(0, 45) + "..." : q;
+            Settings.SavedFilterEntries.Add(new SavedFilter { DisplayName = name, Query = q, Folder = "" });
+        }
+        Settings.SavedFilters.Clear();
+    }
+
+    private static string TruncateUi(string text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLen ? text : text.Substring(0, maxLen - 1) + "...";
+    }
+
+    private static string LineLabel(SavedFilter f) =>
+        string.IsNullOrEmpty(f.DisplayName) ? TruncateUi(f.Query, 36) : TruncateUi(f.DisplayName, 44);
+
+    private void RemoveFiltersInFolder(string folderKey)
+    {
+        var key = folderKey ?? "";
+        Settings.SavedFilterEntries.RemoveAll(x => (x.Folder ?? "") == key);
+    }
+
     private Predicate<Entity> GetPredicate(string windowTitle, ref string filterText, Vector2 defaultPosition, bool showWindow)
     {
         if (!showWindow) return null;
+        
         Settings.SavedFilters ??= [];
+        Settings.SavedFilterEntries ??= [];
+        ImGui.SetNextWindowSize(new Vector2(440, 560), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowPos(defaultPosition, ImGuiCond.FirstUseEver);
-        if (ImGui.Begin(windowTitle, ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.Begin(windowTitle, ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize))
+            return null;
+        MigrateLegacySavedFilters();
+        ImGui.TextUnformatted("Active IFL");
+        var multiline = filterText.Contains('\n');
+        ImGui.InputTextMultiline("##input", ref filterText, 8000, new Vector2(-1, multiline ? 150 : ImGui.GetTextLineHeightWithSpacing() + 2));
+        Predicate<Entity> returnValue = null;
+        if (ImGui.Button("Clear"))
+            filterText = "";
+        ImGui.SameLine();
+        var trimmed = filterText.Trim();
+        ImGui.BeginDisabled(string.IsNullOrWhiteSpace(trimmed));
+        if (ImGui.Button("Save"))
         {
-            ImGui.InputTextWithHint("##input", "Filter using IFL syntax", ref filterText, 2000);
-            Predicate<Entity> returnValue = null;
-            if (!string.IsNullOrWhiteSpace(filterText))
+            _saveAsQuerySnapshot = trimmed;
+            _saveAsName = trimmed.Length > 48 ? trimmed.Substring(0, 45) + "…" : trimmed;
+            _saveAsFolder = "";
+            ImGui.OpenPopup("hi_save_active_filter");
+        }
+        ImGui.EndDisabled();
+        if (ImGui.BeginPopup("hi_save_active_filter"))
+        {
+            ImGui.TextUnformatted("Name");
+            ImGui.InputTextWithHint("##saveasname", "Name", ref _saveAsName, 128);
+            ImGui.TextUnformatted("Group");
+            ImGui.InputTextWithHint("##saveasfolder", "Group", ref _saveAsFolder, 64);
+            if (ImGui.Button("Save"))
             {
-                ImGui.SameLine();
-                if (ImGui.Button("Clear"))
+                var q = _saveAsQuerySnapshot;
+                if (!string.IsNullOrWhiteSpace(q))
                 {
-                    filterText = "";
-                    return null;
+                    var dn = string.IsNullOrWhiteSpace(_saveAsName.Trim()) ? TruncateUi(q, 48) : _saveAsName.Trim();
+                    Settings.SavedFilterEntries.Add(new SavedFilter { DisplayName = dn, Query = q.Trim(), Folder = _saveAsFolder ?? "" });
                 }
-
-                if (!Settings.SavedFilters.Contains(filterText))
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+                ImGui.CloseCurrentPopup();
+            ImGui.EndPopup();
+        }
+        if (!string.IsNullOrEmpty(trimmed))
+        {
+            var (query, exception) = _queries.GetValue(trimmed, s =>
+            {
+                try
                 {
-                    ImGui.SameLine();
-                    if (ImGui.Button("Save"))
-                    {
-                        Settings.SavedFilters.Add(filterText);
-                    }
+                    var itemQuery = ItemQuery.Load(s);
+                    if (itemQuery.FailedToCompile)
+                        return new QueryOrException(null, new Exception(itemQuery.Error));
+                    return new QueryOrException(itemQuery, null);
                 }
-
-                var (query, exception) = _queries.GetValue(filterText, s =>
+                catch (Exception ex)
+                {
+                    return new QueryOrException(null, ex);
+                }
+            })!;
+            if (exception != null)
+            {
+                ImGui.TextUnformatted($"{exception.Message}");
+            }
+            else
+            {
+                returnValue = s =>
                 {
                     try
                     {
-                        var itemQuery = ItemQuery.Load(s);
-                        if (itemQuery.FailedToCompile)
-                        {
-                            return new QueryOrException(null, new Exception(itemQuery.Error));
-                        }
-
-                        return new QueryOrException(itemQuery, null);
+                        return query.CompiledQuery(new ItemData(s, GameController));
                     }
                     catch (Exception ex)
                     {
-                        return new QueryOrException(null, ex);
+                        DebugWindow.LogError($"Failed to match item: {ex}");
+                        return false;
                     }
-                })!;
-
-                if (exception != null)
-                {
-                    ImGui.TextUnformatted($"{exception.Message}");
-                }
-                else
-                {
-                    returnValue = s =>
-                    {
-                        try
-                        {
-                            return query.CompiledQuery(new ItemData(s, GameController));
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugWindow.LogError($"Failed to match item: {ex}");
-                            return false;
-                        }
-                    };
-                }
+                };
             }
-
-            // ReSharper disable once AssignmentInConditionalExpression
-            if (Settings.SavedFilters.Any() && Settings.UsePopupForFilterSelector
-                    ? Settings.OpenSavedFilterList = ImGui.BeginPopupContextItem("saved_filter_popup")
-                    : Settings.OpenSavedFilterList = ImGui.TreeNodeEx("Saved filters",
-                        Settings.OpenSavedFilterList
-                            ? ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.NoTreePushOnOpen
-                            : ImGuiTreeNodeFlags.NoTreePushOnOpen))
+        }
+        ImGui.Separator();
+        if (Settings.UsePopupForFilterSelector)
+        {
+            if (ImGui.Button("Open Saved Filters"))
+                ImGui.OpenPopup("saved_filter_popup");
+            if (ImGui.BeginPopup("saved_filter_popup"))
             {
-                foreach (var (savedFilter, index) in Settings.SavedFilters.Select((x, i) => (x, i)).ToList())
-                {
-                    ImGui.PushID($"saved{index}");
-                    if (ImGui.Button("Load"))
-                    {
-                        filterText = savedFilter;
-                    }
+                if (!Settings.SavedFilterEntries.Any())
+                    ImGui.TextUnformatted("No saved filters yet.");
+                else
+                    DrawSavedFilterRows(ref filterText);
+                ImGui.EndPopup();
+            }
+        }
+        // ReSharper disable once AssignmentInConditionalExpression
+        else if (Settings.OpenSavedFilterList = ImGui.TreeNodeEx("Saved filters",
+                     Settings.OpenSavedFilterList
+                         ? ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.NoTreePushOnOpen
+                         : ImGuiTreeNodeFlags.NoTreePushOnOpen))
+        {
+            if (!Settings.SavedFilterEntries.Any())
+                ImGui.TextUnformatted("No saved filters yet.");
+            else
+            {
+                var savedH = Math.Max(120f, ImGui.GetContentRegionAvail().Y);
+                //ImGui.BeginChild("##saved_scroll", new Vector2(0, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.HorizontalScrollbar);
+                DrawSavedFilterRows(ref filterText);
+                //ImGui.EndChild();
+            }
+            ImGui.TreePop();
+        }
+        if (_openFolderDeleteConfirm)
+        {
+            ImGui.OpenPopup("hi_confirm_folder_delete");
+            _openFolderDeleteConfirm = false;
+        }
+        if (ImGui.BeginPopup("hi_confirm_folder_delete"))
+        {
+            ImGui.TextUnformatted($"Remove all filters in \"{_folderDeleteLabel}\"?");
+            if (ImGui.Button("Remove all"))
+            {
+                RemoveFiltersInFolder(_folderDeleteKey);
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+                ImGui.CloseCurrentPopup();
+            ImGui.EndPopup();
+        }
+        ImGui.End();
+        return returnValue;
+    }
 
+    private void DrawSavedFilterRows(ref string filterText)
+    {
+        var list = Settings.SavedFilterEntries;
+        bool modified = false;
+        foreach (var folderGroup in list.Select((f, i) => (f, i)).GroupBy(t => t.f.Folder ?? "").OrderBy(g => g.Key).ToList())
+        {
+            if (modified) break;
+
+            var label = string.IsNullOrEmpty(folderGroup.Key) ? "General" : folderGroup.Key;
+            ImGui.PushID($"fld_{label}");
+            var folderId = $"##fld_{folderGroup.Key.GetHashCode():X8}";
+            var treeOpen = ImGui.TreeNodeEx(folderId, ImGuiTreeNodeFlags.DefaultOpen);
+            ImGui.SameLine();
+            ImGui.TextUnformatted(label);
+            ImGui.SameLine(0, 8f);
+            ImGui.PushID("foldtools");
+            if (ImGui.Button("Delete group"))
+            {
+                _folderDeleteKey = folderGroup.Key;
+                _folderDeleteLabel = label;
+                _openFolderDeleteConfirm = true;
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Remove every filter in this folder");
+            ImGui.PopID();
+            if (treeOpen)
+            {
+                ImGui.Separator();
+                foreach (var (savedFilter, index) in folderGroup.OrderBy(x => x.i))
+                {
+                    if (modified) break;
+                    ImGui.PushID($"saved{index}");
+                    ImGui.Button("=");
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip("Drag to reorder");
+                    if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+                    {
+                        ImGuiHelpers.SetDragDropPayload("HI_FILTER_ITEM", index);
+                        ImGui.EndDragDropSource();
+                    }
+                    if (ImGui.BeginDragDropTarget())
+                    {
+                        var payload = ImGuiHelpers.AcceptDragDropPayload<int>("HI_FILTER_ITEM");
+                        if (payload.HasValue)
+                        {
+                            var srcIndex = payload.Value;
+                            if (srcIndex >= 0 && srcIndex < list.Count && srcIndex != index)
+                            {
+                                var item = list[srcIndex];
+                                list.RemoveAt(srcIndex);
+                                var insertIndex = index;
+                                //if (insertIndex > srcIndex)
+                                //    insertIndex--;
+                                list.Insert(insertIndex, item);
+                            }
+                        }
+                        ImGui.EndDragDropTarget();
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Load"))
+                        filterText = savedFilter.Query;
+                    ImGui.SameLine();
+                    if (ImGui.Button("Edit"))
+                    {
+                        _editFilterIndex = index;
+                        _editQuery = savedFilter.Query;
+                        _editName = savedFilter.DisplayName;
+                        _editFolder = savedFilter.Folder ?? "";
+                        ImGui.OpenPopup($"hi_edit_{index}");
+                    }
                     ImGui.SameLine();
                     if (ImGui.Button("Delete"))
                     {
                         if (ImGui.IsKeyDown(ImGuiKey.ModShift))
-                        {
-                            Settings.SavedFilters.Remove(savedFilter);
-                        }
+                            list.Remove(savedFilter);
                     }
                     else if (ImGui.IsItemHovered())
-                    {
                         ImGui.SetTooltip("Hold Shift");
+                    ImGui.SameLine();
+                    ImGui.TextUnformatted(LineLabel(savedFilter));
+                    if (ImGui.IsItemHovered())
+                    {
+                        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                        {
+                            ImGui.OpenPopup($"hi_edit_{index}");
+                        }
+
+                        if (ImGui.IsMouseClicked(ImGuiMouseButton.Middle))
+                        {
+                            filterText = savedFilter.Query;
+                        }
+
+                        ImGui.BeginTooltip();
+                        ImGui.PushTextWrapPos(ImGui.GetFontSize() * 42);
+                        ImGui.TextUnformatted(savedFilter.Query);
+                        ImGui.PopTextWrapPos();
+                        ImGui.EndTooltip();
                     }
 
-                    ImGui.SameLine();
-                    ImGui.TextUnformatted(savedFilter);
+                    if (ImGui.BeginPopup($"hi_edit_{index}"))
+                    {
+                        ImGui.TextUnformatted("Display name");
+                        ImGui.InputTextWithHint("##editname", "Short name", ref _editName, 128);
+                        ImGui.TextUnformatted("Folder");
+                        ImGui.InputTextWithHint("##editfolder", "Optional group", ref _editFolder, 64);
+                        ImGui.TextUnformatted("IFL query");
+                        ImGui.InputTextMultiline("##editquery", ref _editQuery, 8000, new Vector2(-1, 150));
+                        if (ImGui.Button("Save"))
+                        {
+                            savedFilter.Query = _editQuery.Trim();
+                            savedFilter.DisplayName = _editName;
+                            savedFilter.Folder = _editFolder ?? "";
+                            ImGui.CloseCurrentPopup();
+                            _editFilterIndex = null;
+                        }
+                        ImGui.EndPopup();
+                    }
+                    else if (_editFilterIndex == index)
+                        _editFilterIndex = null;
 
                     ImGui.PopID();
                 }
-
-                if (Settings.UsePopupForFilterSelector)
-                {
-                    ImGui.EndPopup();
-                }
-                else
-                {
-                    ImGui.TreePop();
-                }
+                ImGui.TreePop();
             }
-
-            if (Settings.UsePopupForFilterSelector)
-            {
-                if (ImGui.Button("Open Saved Filters"))
-                {
-                    ImGui.OpenPopup("saved_filter_popup");
-                }
-            }
-
-            ImGui.End();
-            return returnValue;
+            ImGui.PopID();
         }
-
-        return null;
     }
 
     public override void Render()
@@ -199,7 +383,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
         if (!Settings.Enable)
             return;
-
+        
         var (inventory, rectElement, hasIngameFilter) = (
                 InGameState.IngameUi.StashElement, 
                 InGameState.IngameUi.GuildStashElement, 
