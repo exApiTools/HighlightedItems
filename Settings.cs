@@ -27,7 +27,11 @@ public class Settings : ISettings
     public ToggleNode UseMoveToInventoryAsMoveToStashWhenNoHighlights { get; set; } = new(false);
     public HotkeyNode MoveToStashHotkey { get; set; } = new(Keys.None);
     public ToggleNode InvertSelection { get; set; } = new(false);
-    public ToggleNode ShowCustomFilterWindow { get; set; } = new(true);
+    [Menu("Show Stash Custom Filter Window")]
+    public ToggleNode ShowStashCustomFilterWindow { get; set; } = new(true);
+
+    [Menu("Show Inventory Custom Filter Window")]
+    public ToggleNode ShowInventoryCustomFilterWindow { get; set; } = new(true);
     public ToggleNode ResetCustomFilterOnPanelClose { get; set; } = new(true);
     public ToggleNode UsePopupForFilterSelector { get; set; } = new(false);
     public RangeNode<int> CustomFilterFrameThickness { get; set; } = new(2, 1, 20);
