@@ -67,5 +67,8 @@ public class Settings : ISettings
     public List<string> SavedFilters { get; set; } = [];
 
     [IgnoreMenu]
+    public Dictionary<string, string> SavedFilterNames { get; set; } = [];
+
+    [IgnoreMenu]
     public bool OpenSavedFilterList { get; set; } = true;
 }

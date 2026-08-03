@@ -27,6 +27,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     private SyncTask<bool> _currentOperation;
     private string _customStashFilter = "";
     private string _customInventoryFilter = "";
+    private int _editedFilterIndex = -1;
 
     private record QueryOrException(ItemQuery Query, Exception Exception);
 
@@ -59,6 +60,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
     {
         if (!showWindow) return null;
         Settings.SavedFilters ??= [];
+        Settings.SavedFilterNames ??= [];
         ImGui.SetNextWindowPos(defaultPosition, ImGuiCond.FirstUseEver);
         if (ImGui.Begin(windowTitle, ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize))
         {
@@ -132,26 +134,79 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 foreach (var (savedFilter, index) in Settings.SavedFilters.Select((x, i) => (x, i)).ToList())
                 {
                     ImGui.PushID($"saved{index}");
-                    if (ImGui.Button("Load"))
+                    if (_editedFilterIndex == index)
                     {
-                        filterText = savedFilter;
-                    }
-
-                    ImGui.SameLine();
-                    if (ImGui.Button("Delete"))
-                    {
-                        if (ImGui.IsKeyDown(ImGuiKey.ModShift))
+                        if (ImGui.Button("Done"))
                         {
-                            Settings.SavedFilters.Remove(savedFilter);
+                            _editedFilterIndex = -1;
+                        }
+
+                        ImGui.SameLine();
+                        var name = Settings.SavedFilterNames.GetValueOrDefault(savedFilter, "");
+                        ImGui.SetNextItemWidth(150);
+                        if (ImGui.InputTextWithHint("##editName", "Name (optional)", ref name, 200))
+                        {
+                            if (string.IsNullOrWhiteSpace(name))
+                            {
+                                Settings.SavedFilterNames.Remove(savedFilter);
+                            }
+                            else
+                            {
+                                Settings.SavedFilterNames[savedFilter] = name;
+                            }
+                        }
+
+                        ImGui.SameLine();
+                        var editedQuery = savedFilter;
+                        ImGui.SetNextItemWidth(300);
+                        if (ImGui.InputTextWithHint("##editQuery", "Filter using IFL syntax", ref editedQuery, 2000) && editedQuery != savedFilter)
+                        {
+                            Settings.SavedFilters[index] = editedQuery;
+                            if (Settings.SavedFilterNames.Remove(savedFilter, out var movedName))
+                            {
+                                Settings.SavedFilterNames[editedQuery] = movedName;
+                            }
                         }
                     }
-                    else if (ImGui.IsItemHovered())
+                    else
                     {
-                        ImGui.SetTooltip("Hold Shift");
-                    }
+                        if (ImGui.Button("Load"))
+                        {
+                            filterText = savedFilter;
+                        }
 
-                    ImGui.SameLine();
-                    ImGui.TextUnformatted(savedFilter);
+                        ImGui.SameLine();
+                        if (ImGui.Button("Edit"))
+                        {
+                            _editedFilterIndex = index;
+                        }
+
+                        ImGui.SameLine();
+                        if (ImGui.Button("Delete"))
+                        {
+                            if (ImGui.IsKeyDown(ImGuiKey.ModShift))
+                            {
+                                Settings.SavedFilters.Remove(savedFilter);
+                                Settings.SavedFilterNames.Remove(savedFilter);
+                                if (_editedFilterIndex >= Settings.SavedFilters.Count)
+                                {
+                                    _editedFilterIndex = -1;
+                                }
+                            }
+                        }
+                        else if (ImGui.IsItemHovered())
+                        {
+                            ImGui.SetTooltip("Hold Shift");
+                        }
+
+                        ImGui.SameLine();
+                        var displayName = Settings.SavedFilterNames.GetValueOrDefault(savedFilter);
+                        ImGui.TextUnformatted(displayName ?? savedFilter);
+                        if (displayName != null && ImGui.IsItemHovered())
+                        {
+                            ImGui.SetTooltip(savedFilter);
+                        }
+                    }
 
                     ImGui.PopID();
                 }
