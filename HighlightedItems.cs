@@ -55,9 +55,9 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         DrawIgnoredCellsSettings();
     }
 
-    private Predicate<Entity> GetPredicate(string windowTitle, ref string filterText, Vector2 defaultPosition)
+    private Predicate<Entity> GetPredicate(string windowTitle, ref string filterText, Vector2 defaultPosition, bool showWindow)
     {
-        if (!Settings.ShowCustomFilterWindow) return null;
+        if (!showWindow) return null;
         Settings.SavedFilters ??= [];
         ImGui.SetNextWindowPos(defaultPosition, ImGuiCond.FirstUseEver);
         if (ImGui.Begin(windowTitle, ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize))
@@ -218,7 +218,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         if (inventory != null)
         {
             var stashRect = rectElement.GetClientRectCache;
-            var (itemFilter, isCustomFilter) = GetPredicate("Custom stash filter", ref _customStashFilter, stashRect.BottomLeft.ToVector2Num()) is { } customPredicate
+            var (itemFilter, isCustomFilter) = GetPredicate("Custom stash filter", ref _customStashFilter, stashRect.BottomLeft.ToVector2Num(), Settings.ShowStashCustomFilterWindow) is { } customPredicate
                 ? ((Predicate<NormalInventoryItem>)(s => customPredicate(s.Item)), true)
                 : (s => !hasIngameFilter || s.isHighlighted != Settings.InvertSelection.Value, false);
 
@@ -283,7 +283,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             var inventoryRect = inventoryPanel[2].GetClientRectCache;
 
-            var (itemFilter, isCustomFilter) = GetPredicate("Custom inventory filter", ref _customInventoryFilter, inventoryRect.BottomLeft.ToVector2Num()) is { } customPredicate
+            var (itemFilter, isCustomFilter) = GetPredicate("Custom inventory filter", ref _customInventoryFilter, inventoryRect.BottomLeft.ToVector2Num(), Settings.ShowInventoryCustomFilterWindow) is { } customPredicate
                 ? (customPredicate, true)
                 : (_ => true, false);
 
