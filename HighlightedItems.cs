@@ -404,7 +404,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         {
             var stashRect = rectElement.GetClientRectCache;
             var (itemFilter, isCustomFilter) = GetPredicate("Custom stash filter", ref _customStashFilter, stashRect.BottomLeft.ToVector2Num(), Settings.ShowStashCustomFilterWindow) is { } customPredicate
-                ? ((Predicate<NormalInventoryItem>)(s => customPredicate(s.Item)), true)
+                ? ((Predicate<NormalInventoryItem>)(s => customPredicate(s.Item) != Settings.InvertSelection.Value), true)
                 : (s => !hasIngameFilter || s.isHighlighted != Settings.InvertSelection.Value, false);
 
             //Determine Stash Pickup Button position and draw
