@@ -423,15 +423,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 stackSizes += item.Item?.GetComponent<Stack>()?.Size;
                 if (isCustomFilter)
                 {
-                    var rect = item.GetClientRectCache;
-                    var deflateFactor = Settings.CustomFilterBorderDeflation / 200.0;
-                    var deflateWidth = (int)(rect.Width * deflateFactor + Settings.CustomFilterFrameThickness / 2);
-                    var deflateHeight = (int)(rect.Height * deflateFactor + Settings.CustomFilterFrameThickness / 2);
-                    rect.Inflate(-deflateWidth, -deflateHeight);
-
-                    var topLeft = rect.TopLeft.ToVector2Num();
-                    var bottomRight = rect.BottomRight.ToVector2Num();
-                    Graphics.DrawFrame(topLeft, bottomRight, Settings.CustomFilterFrameColor, Settings.CustomFilterBorderRounding, Settings.CustomFilterFrameThickness, 0);
+                    DrawItemFrame(item.GetClientRectCache, Settings.CustomFilterFrameColor);
                 }
             }
 
@@ -472,6 +464,30 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                 ? (customPredicate, true)
                 : (_ => true, false);
 
+            DrawInventoryExcludeFilterWindow(inventoryRect.TopLeft.ToVector2Num() + new Vector2(0, -80));
+            var excludeTerms = GetExcludeTerms();
+            if (excludeTerms.Length > 0 && (Settings.ShowExcludeHighlight || Settings.ShowExcludeTooltip))
+            {
+                var mousePos = Mouse.GetCursorPosition() - WindowOffset;
+                foreach (var item in GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
+                             .Where(x => IsExcluded(x.Item, excludeTerms)))
+                {
+                    var rect = item.GetClientRect();
+                    if (Settings.ShowExcludeHighlight)
+                    {
+                        DrawItemFrame(rect, Settings.ExcludeFilterFrameColor);
+                    }
+
+                    if (Settings.ShowExcludeTooltip && rect.Contains(mousePos))
+                    {
+                        ImGui.SetNextWindowPos(ImGui.GetMousePos() + Settings.ExcludeTooltipOffset.Value);
+                        ImGui.BeginTooltip();
+                        ImGui.TextUnformatted(item.Item?.Path ?? "");
+                        ImGui.EndTooltip();
+                    }
+                }
+            }
+
             if (Settings.DumpButtonEnable && IsStashTargetOpened)
             {
                 //Determine Inventory Pickup Button position and draw
@@ -482,17 +498,10 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
                 if (isCustomFilter)
                 {
-                    foreach (var item in GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems.Where(x => itemFilter(x.Item)))
+                    foreach (var item in GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
+                                 .Where(x => itemFilter(x.Item) && !IsExcluded(x.Item, excludeTerms)))
                     {
-                        var rect = item.GetClientRect();
-                        var deflateFactor = Settings.CustomFilterBorderDeflation / 200.0;
-                        var deflateWidth = (int)(rect.Width * deflateFactor + Settings.CustomFilterFrameThickness / 2);
-                        var deflateHeight = (int)(rect.Height * deflateFactor + Settings.CustomFilterFrameThickness / 2);
-                        rect.Inflate(-deflateWidth, -deflateHeight);
-
-                        var topLeft = rect.TopLeft.ToVector2Num();
-                        var bottomRight = rect.BottomRight.ToVector2Num();
-                        Graphics.DrawFrame(topLeft, bottomRight, Settings.CustomFilterFrameColor, Settings.CustomFilterBorderRounding, Settings.CustomFilterFrameThickness, 0);
+                        DrawItemFrame(item.GetClientRect(), Settings.CustomFilterFrameColor);
                     }
                 }
 
@@ -506,6 +515,7 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
                     var inventoryItems = GameController.IngameState.ServerData.PlayerInventories[0].Inventory.InventorySlotItems
                         .Where(x => !IsInIgnoreCell(x))
                         .Where(x => itemFilter(x.Item))
+                        .Where(x => !IsExcluded(x.Item, excludeTerms))
                         .OrderBy(x => x.PosX)
                         .ThenBy(x => x.PosY)
                         .ToList();
@@ -678,6 +688,127 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         _itemsToMove = null;
         DebugWindow.LogMsg("HighlightedItems: Stopped moving items");
         return true;
+    }
+
+    private void DrawItemFrame(SharpDX.RectangleF rect, Color color)
+    {
+        var deflateFactor = Settings.CustomFilterBorderDeflation / 200.0;
+        var deflateWidth = (int)(rect.Width * deflateFactor + Settings.CustomFilterFrameThickness / 2);
+        var deflateHeight = (int)(rect.Height * deflateFactor + Settings.CustomFilterFrameThickness / 2);
+        rect.Inflate(-deflateWidth, -deflateHeight);
+
+        Graphics.DrawFrame(rect.TopLeft.ToVector2Num(), rect.BottomRight.ToVector2Num(), color, Settings.CustomFilterBorderRounding, Settings.CustomFilterFrameThickness, 0);
+    }
+
+    private void DrawInventoryExcludeFilterWindow(Vector2 defaultPosition)
+    {
+        if (!Settings.ShowInventoryExcludeFilterWindow)
+            return;
+
+        Settings.SavedExcludeFilters ??= [];
+        ImGui.SetNextWindowPos(defaultPosition, ImGuiCond.FirstUseEver);
+        if (ImGui.Begin("Inventory exclude filter", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            var saved = Settings.SavedExcludeFilters;
+            ImGui.TextUnformatted("Keep in inventory");
+            ImGui.SameLine();
+            var frameColor = Settings.ExcludeFilterFrameColor.Value;
+            var colorVec = new System.Numerics.Vector4(frameColor.R / 255f, frameColor.G / 255f, frameColor.B / 255f, frameColor.A / 255f);
+            if (ImGui.ColorEdit4("##excludecolor", ref colorVec, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar))
+                Settings.ExcludeFilterFrameColor.Value = new Color(colorVec.X, colorVec.Y, colorVec.Z, colorVec.W);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Highlight frame color");
+            var text = Settings.InventoryExcludeFilter.Value ?? "";
+            ImGui.SetNextItemWidth(250);
+            if (ImGui.InputTextWithHint("##excludefilter", "metadata or name... (Enter saves)", ref text, 1024, ImGuiInputTextFlags.EnterReturnsTrue))
+            {
+                foreach (var term in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (!saved.Any(x => x.Equals(term, StringComparison.OrdinalIgnoreCase)))
+                        saved.Add(term);
+                }
+
+                text = "";
+                ImGui.SetKeyboardFocusHere(-1);
+            }
+
+            Settings.InventoryExcludeFilter.Value = text;
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Items whose metadata path or name contains any of these terms\nget a gold border and are not moved to the stash.\nPress Enter to save the term, click a saved term to remove it.");
+
+            if (saved.Count > 0)
+            {
+                var removeIndex = -1;
+                if (saved.Count > 2)
+                {
+                    // more than 2 saved filters: collapse them into a popout so the window stays compact
+                    if (ImGui.SmallButton($"Filters ({saved.Count})##hiExcludeList"))
+                        ImGui.OpenPopup("hi_exclude_popup");
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Clear All##hiExcludeClearAll"))
+                    {
+                        saved.Clear();
+                        Settings.InventoryExcludeFilter.Value = "";
+                    }
+
+                    if (ImGui.BeginPopup("hi_exclude_popup"))
+                    {
+                        // one filter per line, click to remove it
+                        for (var i = 0; i < saved.Count; i++)
+                        {
+                            if (ImGui.SmallButton($"{saved[i]} x##hiExclude{i}"))
+                                removeIndex = i;
+                        }
+
+                        ImGui.EndPopup();
+                    }
+                }
+                else
+                {
+                    // one small button per saved filter, click to remove it
+                    for (var i = 0; i < saved.Count; i++)
+                    {
+                        if (i > 0) ImGui.SameLine();
+                        if (ImGui.SmallButton($"{saved[i]} x##hiExclude{i}"))
+                            removeIndex = i;
+                    }
+
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Clear All##hiExcludeClearAll"))
+                    {
+                        saved.Clear();
+                        Settings.InventoryExcludeFilter.Value = "";
+                    }
+                }
+
+                if (removeIndex >= 0 && removeIndex < saved.Count)
+                    saved.RemoveAt(removeIndex);
+            }
+        }
+
+        ImGui.End();
+    }
+
+    private string[] GetExcludeTerms()
+    {
+        var inputTerms = (Settings.InventoryExcludeFilter.Value ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return (Settings.SavedExcludeFilters ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Concat(inputTerms)
+            .ToArray();
+    }
+
+    private static bool IsExcluded(Entity item, string[] terms)
+    {
+        if (item == null || terms.Length == 0)
+            return false;
+
+        var metadata = item.Path ?? "";
+        var renderName = item.RenderName ?? "";
+        return terms.Any(t => metadata.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                              renderName.Contains(t, StringComparison.OrdinalIgnoreCase));
     }
 
     private List<NormalInventoryItem> GetHighlightedItems(Inventory stash, Predicate<NormalInventoryItem> filter)
