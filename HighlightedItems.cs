@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ExileCore.Shared.Enums;
-using ImGuiNET;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -16,6 +15,7 @@ using System.Threading;
 using ExileCore.PoEMemory.Components;
 using ExileCore.Shared;
 using ExileCore.Shared.Helpers;
+using Hexa.NET.ImGui;
 using ItemFilterLibrary;
 using SharpDX;
 using Vector2 = System.Numerics.Vector2;
@@ -812,12 +812,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
 
     private void DrawIgnoredCellsSettings()
     {
-        ImGui.BeginChild("##IgnoredCellsMain", new Vector2(ImGui.GetContentRegionAvail().X, 204f), ImGuiChildFlags.Border,
+        ImGui.BeginChild("##IgnoredCellsMain", new Vector2(ImGui.GetContentRegionAvail().X, 204f), ImGuiChildFlags.Borders,
             ImGuiWindowFlags.NoScrollWithMouse);
         ImGui.Text("Ignored Inventory Slots (checked = ignored)");
 
         var contentRegionAvail = ImGui.GetContentRegionAvail();
-        ImGui.BeginChild("##IgnoredCellsCels", new Vector2(contentRegionAvail.X, contentRegionAvail.Y), ImGuiChildFlags.Border,
+        ImGui.BeginChild("##IgnoredCellsCels", new Vector2(contentRegionAvail.X, contentRegionAvail.Y), ImGuiChildFlags.Borders,
             ImGuiWindowFlags.NoScrollWithMouse);
 
         for (int y = 0; y < 5; ++y)
