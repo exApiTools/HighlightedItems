@@ -108,7 +108,10 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         ImGui.SetNextWindowSize(new Vector2(440, 560), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowPos(defaultPosition, ImGuiCond.FirstUseEver);
         if (!ImGui.Begin(windowTitle, ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.End();
             return null;
+        }
         MigrateLegacySavedFilters();
         ImGui.TextUnformatted("Active IFL");
         ImGui.SameLine();
@@ -214,7 +217,6 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             {
                 DrawSavedFilterRows(ref filterText);
             }
-            ImGui.TreePop();
         }
         if (_openFolderDeleteConfirm)
         {
