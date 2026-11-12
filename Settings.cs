@@ -32,6 +32,27 @@ public class Settings : ISettings
 
     [Menu("Show Inventory Custom Filter Window")]
     public ToggleNode ShowInventoryCustomFilterWindow { get; set; } = new(true);
+
+    [Menu("Show Inventory Exclude Filter Window", "Text box that keeps matching inventory items from being dumped to stash")]
+    public ToggleNode ShowInventoryExcludeFilterWindow { get; set; } = new(true);
+
+    [IgnoreMenu]
+    public TextNode InventoryExcludeFilter { get; set; } = new("");
+
+    [IgnoreMenu]
+    public List<string> SavedExcludeFilters { get; set; } = [];
+
+    [Menu("Show Exclude Highlight", "Draw the frame around excluded inventory items (items are still skipped when dumping)")]
+    public ToggleNode ShowExcludeHighlight { get; set; } = new(true);
+
+    [Menu("Show Exclude Metadata Tooltip", "Show the metadata path tooltip when hovering an excluded item")]
+    public ToggleNode ShowExcludeTooltip { get; set; } = new(true);
+
+    [Menu("Exclude Filter Frame Color")]
+    public ColorNode ExcludeFilterFrameColor { get; set; } = new(new Color(255, 215, 0, 255));
+
+    [Menu("Exclude Tooltip Offset", "X/Y offset of the metadata tooltip from the cursor")]
+    public RangeNode<Vector2> ExcludeTooltipOffset { get; set; } = new(Vector2.Zero, Vector2.One * -1000, Vector2.One * 1000);
     public ToggleNode ResetCustomFilterOnPanelClose { get; set; } = new(true);
     public ToggleNode UsePopupForFilterSelector { get; set; } = new(false);
     public RangeNode<int> CustomFilterFrameThickness { get; set; } = new(2, 1, 20);
